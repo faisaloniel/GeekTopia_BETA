@@ -1,335 +1,213 @@
-import { SlashCommandBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } from 'discord.js';
-import { createEmbed, successEmbed, infoEmbed, warningEmbed } from '../../utils/embeds.js';
-import { logger } from '../../utils/logger.js';
-import { replyUserError, ErrorTypes } from '../../utils/errorHandler.js';
-import { InteractionHelper } from '../../utils/interactionHelper.js';
-import { evaluateMathExpression } from '../../utils/safeMathParser.js';
+import {
+    SlashCommandBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ActionRowBuilder,
+    EmbedBuilder,
+} from "discord.js";
+import * as math from "mathjs";
 
-const calculationContexts = new Map();
+function buildCalculatorRows(disabled = false) {
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId("calculator_clear")
+            .setLabel("AC")
+            .setStyle(ButtonStyle.Danger)
+            .setDisabled(disabled),
+        new ButtonBuilder()
+            .setCustomId("calculator_(")
+            .setLabel("(")
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(disabled),
+        new ButtonBuilder()
+            .setCustomId("calculator_)")
+            .setLabel(")")
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(disabled),
+        new ButtonBuilder()
+            .setCustomId("calculator_backspace")
+            .setLabel("Backspace / Arrow")
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(disabled),
+    );
 
-function evaluate(expression) {
-    return evaluateMathExpression(expression);
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId("calculator_1")
+            .setLabel("1")
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(disabled),
+        new ButtonBuilder()
+            .setCustomId("calculator_2")
+            .setLabel("2")
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(disabled),
+        new ButtonBuilder()
+            .setCustomId("calculator_3")
+            .setLabel("3")
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(disabled),
+        new ButtonBuilder()
+            .setCustomId("calculator_/")
+            .setLabel("/")
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(disabled),
+    );
+
+    const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId("calculator_4")
+            .setLabel("4")
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(disabled),
+        new ButtonBuilder()
+            .setCustomId("calculator_5")
+            .setLabel("5")
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(disabled),
+        new ButtonBuilder()
+            .setCustomId("calculator_6")
+            .setLabel("6")
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(disabled),
+        new ButtonBuilder()
+            .setCustomId("calculator_*")
+            .setLabel("*")
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(disabled),
+    );
+
+    const row4 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId("calculator_7")
+            .setLabel("7")
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(disabled),
+        new ButtonBuilder()
+            .setCustomId("calculator_8")
+            .setLabel("8")
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(disabled),
+        new ButtonBuilder()
+            .setCustomId("calculator_9")
+            .setLabel("9")
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(disabled),
+        new ButtonBuilder()
+            .setCustomId("calculator_-")
+            .setLabel("-")
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(disabled),
+    );
+
+    const row5 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId("calculator_0")
+            .setLabel("0")
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(disabled),
+        new ButtonBuilder()
+            .setCustomId("calculator_.")
+            .setLabel(".")
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(disabled),
+        new ButtonBuilder()
+            .setCustomId("calculator_equals")
+            .setLabel("=")
+            .setStyle(ButtonStyle.Success)
+            .setDisabled(disabled),
+        new ButtonBuilder()
+            .setCustomId("calculator_+")
+            .setLabel("+")
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(disabled),
+    );
+
+    return [row1, row2, row3, row4, row5];
 }
 
-const calculationHistory = new Map();
-const MAX_HISTORY = 5;
+function buildEmbed(content) {
+    return new EmbedBuilder()
+        .setColor("Blue")
+        .setDescription(`\`\`\`\n${content}\n\`\`\``);
+}
 
-export { calculationContexts };
+function isOperator(value) {
+    return ["+", "-", "*", "/", "."].includes(value);
+}
 
 export default {
     data: new SlashCommandBuilder()
-        .setName("calculate")
-        .setDescription("Evaluate a mathematical expression")
-        .addStringOption((option) =>
-            option
-                .setName("expression")
-                .setDescription(
-                    "The mathematical expression to evaluate (e.g., 2+2*3, sin(45 deg), 16^0.5)",
-                )
-                .setRequired(true),
-        ),
+        .setName("calculator")
+        .setDescription("Interactive calculator"),
 
     async execute(interaction) {
-        const deferSuccess = await InteractionHelper.safeDefer(interaction);
-        if (!deferSuccess) {
-            logger.warn(`Calculate interaction defer failed`, {
-                userId: interaction.user.id,
-                guildId: interaction.guildId,
-                commandName: 'calculate'
-            });
-            return;
-        }
+        let data = "";
 
-        const expression = interaction.options.getString("expression");
+        const rows = buildCalculatorRows(false);
 
-        if (
-            !/^[0-9+\-*/.()^%! ,<>=&|~?:\[\]{}a-z√π∞°]+$/i.test(expression)
-        ) {
-            return await replyUserError(interaction, {
-                type: ErrorTypes.VALIDATION,
-                message: '**Contains unsupported characters.**\n\n' +
-                    '✅ Supported: Numbers, decimals, + - * / ^ %, sin cos tan sqrt abs log exp, pi e, ()\n' +
-                    '❌ Not supported: Brackets, curly braces, and other symbols'
-            });
-        }
+        await interaction.reply({
+            embeds: [buildEmbed("Results will be displayed here")],
+            components: rows,
+        });
 
-        const dangerousPatterns = [
-            /\b(?:import|require|process|fs|child_process|exec|eval|Function|setTimeout|setInterval|new\s+Function)\s*\(/i,
-            /`/g,
-            /\$\{.*\}/,
-            /\b(?:localStorage|document|window|fetch|XMLHttpRequest)\b/,
-            /\b(?:while|for)\s*\([^)]*\)\s*\{/,
-            /\b(?:function\*|yield|await|async)\b/,
-        ];
+        const message = await interaction.fetchReply();
 
-        for (const pattern of dangerousPatterns) {
-            if (pattern.test(expression)) {
-                return await replyUserError(interaction, {
-                    type: ErrorTypes.VALIDATION,
-                    message: '**Contains blocked code patterns.**\n\n' +
-                        '🚫 **Blocked:** import, require, eval, Function, setTimeout, setInterval, process, fs, document, window, fetch, loops, async/await\n\n' +
-                        'Code-like syntax is not allowed in calculations.'
-                });
-            }
-        }
+        const filter = (i) =>
+            i.user.id === interaction.user.id &&
+            i.customId.startsWith("calculator_");
 
-        let result;
-        try {
-            result = evaluate(expression);
+        const collector = message.createMessageComponentCollector({
+            filter,
+            time: 600000,
+        });
 
-            let formattedResult;
-            if (typeof result === "number") {
-                formattedResult = result.toLocaleString("en-US", {
-                    maximumFractionDigits: 10,
-                });
+        collector.on("collect", async (i) => {
+            const value = i.customId.split("_")[1];
+            let displayText = data || "Results will be displayed here";
 
-                if (
-                    Math.abs(result) > 0 &&
-                    (Math.abs(result) >= 1e10 || Math.abs(result) < 1e-3)
-                ) {
-                    formattedResult = result.toExponential(6);
-                }
-            } else if (typeof result === "boolean") {
-                formattedResult = result ? "true" : "false";
-            } else if (result === null || result === undefined) {
-                formattedResult = "No result";
-            } else if (
-                Array.isArray(result) ||
-                typeof result === "object"
-            ) {
-                formattedResult =
-                    "```json\n" + JSON.stringify(result, null, 2) + "\n```";
-            } else {
-                formattedResult = String(result);
-            }
-
-            const userId = interaction.user.id;
-            if (!calculationHistory.has(userId)) {
-                calculationHistory.set(userId, []);
-            }
-
-            const history = calculationHistory.get(userId);
-            history.unshift({
-                expression,
-                result: formattedResult,
-                timestamp: Date.now(),
-            });
-
-            if (history.length > MAX_HISTORY) {
-                history.pop();
-            }
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`calc_${interaction.id}_add`)
-                    .setLabel("+")
-                    .setStyle(ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId(`calc_${interaction.id}_subtract`)
-                    .setLabel("-")
-                    .setStyle(ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId(`calc_${interaction.id}_multiply`)
-                    .setLabel("×")
-                    .setStyle(ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId(`calc_${interaction.id}_divide`)
-                    .setLabel("÷")
-                    .setStyle(ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId(`calc_${interaction.id}_history`)
-                    .setLabel("History")
-                    .setStyle(ButtonStyle.Secondary),
-            );
-
-            const embed = successEmbed(
-                "🧮 Calculation Result",
-                `**Expression:** \`${expression.replace(/`/g, "\`")}\`\n` +
-                    `**Result:** \`${formattedResult}\`\n\n` +
-                    `*Use the buttons below to perform operations with the result.*`,
-            );
-
-            await InteractionHelper.safeEditReply(interaction, {
-                embeds: [embed],
-                components: [row],
-            });
-
-            const filter = (i) =>
-                i.customId.startsWith(`calc_${interaction.id}`) &&
-                i.user.id === interaction.user.id;
-            const BUTTON_TIMEOUT = 300000;
-            const collector =
-                interaction.channel.createMessageComponentCollector({
-                    filter,
-                    time: BUTTON_TIMEOUT,
-                });
-
-            collector.on("collect", async (i) => {
+            if (value === "equals") {
                 try {
-                    const operation = i.customId.split("_")[2];
-
-                    if (operation === "history") {
-                        if (!i.deferred && !i.replied) {
-                            await i.deferUpdate().catch(console.error);
-                        }
-
-                        const userHistory =
-                            calculationHistory.get(userId) || [];
-
-                        if (userHistory.length === 0) {
-                            await i.followUp({
-                                content: "No calculation history found.",
-                                flags: ["Ephemeral"],
-                            });
-                            return;
-                        }
-
-                        const historyText = userHistory
-                            .map(
-                                (item, index) =>
-                                    `${index + 1}. **${item.expression}** = \`${item.result}\`\n` +
-                                    `<t:${Math.floor(item.timestamp / 1000)}:R>`,
-                            )
-                            .join("\n\n");
-
-                        await i.followUp({
-                            content: `📜 **Your Calculation History**\n\n${historyText}`,
-                            flags: ["Ephemeral"],
-                        });
-                        return;
-                    }
-
-                    let operator = "";
-
-                    switch (operation) {
-                        case "add":
-                            operator = "+";
-                            break;
-                        case "subtract":
-                            operator = "-";
-                            break;
-                        case "multiply":
-                            operator = "*";
-                            break;
-                        case "divide":
-                            operator = "/";
-                            break;
-                    }
-
-                    try {
-                        const contextKey = `${i.user.id}_${operation}`;
-                        calculationContexts.set(contextKey, {
-                            expression,
-                            formattedResult,
-                            operator,
-                            messageId: interaction.message?.id,
-                            channelId: interaction.channelId,
-                            userId: i.user.id
-                        });
-
-                        await i.showModal({
-                            customId: `calc_modal:${operation}`,
-                            title: `Enter a number to ${operation}`,
-                            components: [
-                                {
-                                    type: 1,
-                                    components: [
-                                        {
-                                            type: 4,
-                                            customId: `operand:${contextKey}`,
-                                            label: `Number to ${operator} with ${formattedResult}`,
-                                            placeholder: "Enter a number...",
-                                            style: 1,
-                                            required: true,
-                                            maxLength: 50,
-                                        },
-                                    ],
-                                },
-                            ],
-                        });
-                    } catch (modalError) {
-                        logger.error("Failed to show modal:", modalError);
-                        if (!i.replied && !i.deferred) {
-                            await i.reply({
-                                content: "Failed to open calculator. Please try again.",
-                                flags: ["Ephemeral"],
-                            }).catch(console.error);
-                        }
-                        return;
-                    }
-
+                    const result = math.evaluate(data.toString());
+                    data = String(result);
+                    displayText = data;
                 } catch (error) {
-                    logger.error("Button interaction error:", error);
-                    if (!i.deferred && !i.replied) {
-                        await i.followUp({
-                            content: "An error occurred while processing your request.",
-                            flags: ["Ephemeral"],
-                        }).catch(console.error);
-                    }
+                    data = "";
+                    displayText = "An error occurred please click on the AC for restart.";
                 }
-            });
-
-            collector.on("end", (collected, reason) => {
-                if (reason === "timeout") {
-                    const disabledRow =
-                        new ActionRowBuilder().addComponents(
-                            new ButtonBuilder()
-                                .setCustomId(
-                                    `calc_${interaction.id}_expired`,
-                                )
-                                .setLabel("Calculator Expired")
-                                .setStyle(ButtonStyle.Secondary)
-                                .setDisabled(true),
-                        );
-
-                    interaction
-                        .editReply({
-                            components: [disabledRow],
-                            content:
-                                "⏱️ This calculator has expired. Use the command again to perform more calculations.",
-                        })
-                        .catch(console.error);
-                } else {
-                    const disabledRow = ActionRowBuilder.from(
-                        row,
-                    ).setComponents(
-                        row.components.map((component) =>
-                            ButtonBuilder.from(component).setDisabled(true),
-                        ),
-                    );
-
-                    interaction
-                        .editReply({ components: [disabledRow] })
-                        .catch(console.error);
-                }
-            });
-        } catch (error) {
-            logger.error('Calculation error:', error);
-
-            let errorMessage = 'Failed to evaluate the expression.';
-
-            if (error.message.includes('Unexpected type')) {
-                errorMessage +=
-                    'The expression contains an unsupported operation or function.';
-            } else if (error.message.includes('Undefined symbol')) {
-                errorMessage +=
-                    'The expression contains an undefined variable or function.';
-            } else if (error.message.includes('Brackets not balanced')) {
-                errorMessage += 'The expression has unbalanced brackets.';
-            } else if (
-                error.message.includes('Unexpected operator') ||
-                error.message.includes('Unexpected character')
-            ) {
-                errorMessage +=
-                    'The expression contains an invalid operator or character.';
+            } else if (value === "clear") {
+                data = "";
+                displayText = "Results will be displayed here";
+            } else if (value === "backspace") {
+                data = data.slice(0, -1);
+                displayText = data || "Results will be displayed here";
             } else {
-                errorMessage += 'Please check the syntax and try again.';
+                const lastChar = data.slice(-1);
+
+                if (isOperator(value) && (data.length === 0 || isOperator(lastChar) || lastChar === "(")) {
+                    displayText = data || "Results will be displayed here";
+                } else if (value === ")" && (data.length === 0 || isOperator(lastChar) || lastChar === "(")) {
+                    displayText = data || "Results will be displayed here";
+                } else if (value === "(" && data.length > 0 && !isOperator(lastChar) && lastChar !== "(") {
+                    data += "*(";
+                    displayText = data;
+                } else {
+                    data += value;
+                    displayText = data;
+                }
             }
 
-            await replyUserError(interaction, {
-                type: ErrorTypes.VALIDATION,
-                message: errorMessage,
+            await i.update({
+                embeds: [buildEmbed(displayText)],
+                components: buildCalculatorRows(false),
             });
-        }
+        });
+
+        collector.on("end", async () => {
+            await interaction.editReply({
+                embeds: [buildEmbed(data || "Results will be displayed here")],
+                components: buildCalculatorRows(true),
+            }).catch(() => null);
+        });
     },
 };
